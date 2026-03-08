@@ -160,7 +160,7 @@ function bot(token) {
   // ════════════════════════════════════════════
   // SOZLAMALAR MENYUSI
   // ════════════════════════════════════════════
-  b.hears('⏱ Yangilanish oralig\'i', (ctx) => {
+  b.hears(/^⏱ Yangilanish oralig'i/, (ctx) => {
     setState(ctx.from.id, 'set_poll');
     const s = storage.getSettings(ctx.from.id);
     return ctx.reply(
@@ -174,7 +174,7 @@ function bot(token) {
     );
   });
 
-  b.hears('📅 Tarix chuqurligi', (ctx) => {
+  b.hears(/^📅 Tarix chuqurligi/, (ctx) => {
     setState(ctx.from.id, 'set_history');
     const s = storage.getSettings(ctx.from.id);
     return ctx.reply(
@@ -185,7 +185,7 @@ function bot(token) {
     );
   });
 
-  b.hears('📋 Xabar formati', async (ctx) => {
+  b.hears(/^📋 Xabar formati/, async (ctx) => {
     const s = storage.getSettings(ctx.from.id);
     const current = s.compact;
     storage.updateSetting(ctx.from.id, 'compact', !current);
