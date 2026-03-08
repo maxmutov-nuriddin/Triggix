@@ -11,12 +11,24 @@ function getState(userId) { return state.get(userId) || null; }
 function clearState(userId) { state.delete(userId); }
 
 // ─── Status satri ────────────────────────────
-function statusLine(userId) {
-  const ch = storage.getChannels(userId).length;
-  const sec = storage.getSections(userId).length;
+async function statusLine(userId) {
+  const ch = (await storage.getChannels(userId)).length;
+  const sec = (await storage.getSections(userId)).length;
   const running = monitor.isRunning(userId);
   const icon = running ? '🟢' : '⚪';
   return `${icon} ${ch} kanal · ${sec} bo'lim · monitoring ${running ? 'yoqiq' : 'o\'chiq'}`;
+}
+
+// ─── Foydalanuvchi ma'lumotlari satri ─────────
+async function userInfoLine(userId) {
+  const profile = await storage.getUserProfile(userId);
+  if (!profile) return '';
+  const name = [profile.firstName, profile.lastName].filter(Boolean).join(' ');
+  const uname = profile.username ? ` (@${profile.username})` : '';
+  const date = profile.joinedAt
+    ? profile.joinedAt.toLocaleDateString('uz-UZ', { timeZone: 'Asia/Tashkent' })
+    : '';
+  return `👤 <b>${name}</b>${uname}  |  ID: <code>${userId}</code>  |  📅 ${date}`;
 }
 
 function bot(token) {
@@ -27,15 +39,27 @@ function bot(token) {
   // ════════════════════════════════════════════
   b.start(async (ctx) => {
     clearState(ctx.from.id);
+
+    // Foydalanuvchi ma'lumotlarini MongoDB ga saqlash
+    await storage.saveUserProfile(ctx.from.id, {
+      firstName: ctx.from.first_name || '',
+      lastName:  ctx.from.last_name  || '',
+      username:  ctx.from.username   || '',
+    });
+
+    const info = await userInfoLine(ctx.from.id);
+    const status = await statusLine(ctx.from.id);
+
     await ctx.reply(
       `👋 Salom, <b>${ctx.from.first_name}</b>!\n\n` +
+      `${info}\n\n` +
       `Bu bot Telegram kanallardan habarlarni bo'limlar bo'yicha filtrlaydi.\n\n` +
       `<b>Qanday ishlaydi:</b>\n` +
       `1️⃣  <b>Kanal qo'shing</b> — qaysi kanallarni kuzatish kerak\n` +
       `2️⃣  <b>Bo'lim yarating</b> — filtr nomi va kalit so'zlar\n` +
       `3️⃣  <b>Monitoring boshlang</b> — mos habarlar sizga keladi\n\n` +
       `💡 Biror bo'limning <i>barcha</i> kalit so'zlari habardan topilsa — u habar sizga yuboriladi.\n\n` +
-      `Quyidagi menyudan boshlang 👇`,
+      `<i>${status}</i>\n\nQuyidagi menyudan boshlang 👇`,
       { parse_mode: 'HTML', ...mainMenu() }
     );
   });
@@ -45,8 +69,10 @@ function bot(token) {
   // ════════════════════════════════════════════
   b.hears('📡 Kanallar', async (ctx) => {
     clearState(ctx.from.id);
-    const channels = storage.getChannels(ctx.from.id);
-    let text = `📡 <b>Kanallar</b>\n<i>${statusLine(ctx.from.id)}</i>\n\n`;
+    const channels = await storage.getChannels(ctx.from.id);
+    const info = await userInfoLine(ctx.from.id);
+    const status = await statusLine(ctx.from.id);
+    let text = `${info}\n\n📡 <b>Kanallar</b>\n<i>${status}</i>\n\n`;
     if (channels.length === 0) {
       text += `Hali hech qanday kanal qo'shilmagan.\nQuyidagi tugma orqali birinchi kanalingizni qo'shing.`;
     } else {
@@ -63,18 +89,20 @@ function bot(token) {
   b.hears('▶️ Monitoring', async (ctx) => {
     clearState(ctx.from.id);
     const userId = ctx.from.id;
-    const channels = storage.getChannels(userId);
+    const channels = await storage.getChannels(userId);
     if (channels.length === 0) {
       return ctx.reply(
         `❌ Avval kanal qo'shing!\n\n📡 Kanallar menyusiga o'ting.`,
         channelMenu()
       );
     }
-    const sections = storage.getSections(userId);
-    const settings = storage.getSettings(userId);
+    const sections = await storage.getSections(userId);
+    const settings = await storage.getSettings(userId);
     const running = monitor.isRunning(userId);
+    const info = await userInfoLine(userId);
+    const status = await statusLine(userId);
 
-    let text = `▶️ <b>Monitoring</b>\n<i>${statusLine(userId)}</i>\n\n`;
+    let text = `${info}\n\n▶️ <b>Monitoring</b>\n<i>${status}</i>\n\n`;
     text += `📡 <b>Kanallar:</b> ${channels.map(c => c.username).join(', ')}\n`;
     text += `📂 <b>Bo'limlar:</b> ${sections.length > 0 ? sections.map(s => s.name).join(', ') : 'yo\'q (hammasi keladi)'}\n`;
     text += `⏱ <b>Yangilanish:</b> har ${settings.pollInterval}s\n`;
@@ -99,14 +127,16 @@ function bot(token) {
     });
   });
 
-  b.hears('⚙️ Sozlamalar', (ctx) => {
+  b.hears('⚙️ Sozlamalar', async (ctx) => {
     clearState(ctx.from.id);
     return renderSettings(ctx);
   });
 
-  b.hears('🔙 Orqaga', (ctx) => {
+  b.hears('🔙 Orqaga', async (ctx) => {
     clearState(ctx.from.id);
-    return ctx.reply(`${statusLine(ctx.from.id)}\n\nAsosiy menyu:`, { parse_mode: 'HTML', ...mainMenu() });
+    const info = await userInfoLine(ctx.from.id);
+    const status = await statusLine(ctx.from.id);
+    return ctx.reply(`${info}\n\n<i>${status}</i>\n\nAsosiy menyu:`, { parse_mode: 'HTML', ...mainMenu() });
   });
 
   // ════════════════════════════════════════════
@@ -122,8 +152,8 @@ function bot(token) {
     );
   });
 
-  b.hears('❌ Kanal o\'chirish', (ctx) => {
-    const channels = storage.getChannels(ctx.from.id);
+  b.hears('❌ Kanal o\'chirish', async (ctx) => {
+    const channels = await storage.getChannels(ctx.from.id);
     if (channels.length === 0) return ctx.reply('Hali kanal qo\'shilmagan.');
     return ctx.reply(
       'O\'chirish uchun kanalni tanlang:',
@@ -146,8 +176,8 @@ function bot(token) {
     );
   });
 
-  b.hears('❌ Bo\'lim o\'chirish', (ctx) => {
-    const sections = storage.getSections(ctx.from.id);
+  b.hears('❌ Bo\'lim o\'chirish', async (ctx) => {
+    const sections = await storage.getSections(ctx.from.id);
     if (sections.length === 0) return ctx.reply('Hali bo\'lim yo\'q.');
     return ctx.reply(
       'O\'chirish uchun bo\'limni tanlang:',
@@ -160,9 +190,9 @@ function bot(token) {
   // ════════════════════════════════════════════
   // SOZLAMALAR MENYUSI
   // ════════════════════════════════════════════
-  b.hears(/^⏱ Yangilanish oralig'i/, (ctx) => {
+  b.hears(/^⏱ Yangilanish oralig'i/, async (ctx) => {
     setState(ctx.from.id, 'set_poll');
-    const s = storage.getSettings(ctx.from.id);
+    const s = await storage.getSettings(ctx.from.id);
     return ctx.reply(
       `⏱ <b>Yangilanish oralig'i</b>\n\nJoriy qiymat: <b>${s.pollInterval} soniya</b>\n\n` +
       `Yangi qiymat yuboring (soniyada, min: 30):\n\n` +
@@ -174,9 +204,9 @@ function bot(token) {
     );
   });
 
-  b.hears(/^📅 Tarix chuqurligi/, (ctx) => {
+  b.hears(/^📅 Tarix chuqurligi/, async (ctx) => {
     setState(ctx.from.id, 'set_history');
-    const s = storage.getSettings(ctx.from.id);
+    const s = await storage.getSettings(ctx.from.id);
     return ctx.reply(
       `📅 <b>Tarix chuqurligi</b>\n\nJoriy qiymat: <b>${s.historyDays} kun</b>\n\n` +
       `Monitoring boshlanganida necha kunlik habarlarni yuklash kerak?\n\n` +
@@ -186,9 +216,9 @@ function bot(token) {
   });
 
   b.hears(/^📋 Xabar formati/, async (ctx) => {
-    const s = storage.getSettings(ctx.from.id);
+    const s = await storage.getSettings(ctx.from.id);
     const current = s.compact;
-    storage.updateSetting(ctx.from.id, 'compact', !current);
+    await storage.updateSetting(ctx.from.id, 'compact', !current);
     await ctx.reply(
       `📋 <b>Xabar formati o'zgartirildi:</b>\n\n` +
       (!current ? `📄 Qisqa — faqat kanal nomi va qisqa matn` : `📃 To'liq — sana, bo'lim, to'liq matn`),
@@ -214,16 +244,18 @@ function bot(token) {
       const username = '@' + text.replace('@', '');
       const loading = await ctx.reply('⏳ Kanal tekshirilmoqda...');
       const check = await scraper.checkChannel(username).catch(() => ({ ok: false, error: 'Xato' }));
+      const added = check.ok ? await storage.addChannel(userId, { username, title: username }) : false;
       await ctx.telegram.editMessageText(ctx.chat.id, loading.message_id, null,
         check.ok
-          ? (storage.addChannel(userId, { username, title: username })
-              ? `✅ <b>${username}</b> qo'shildi!`
-              : `⚠️ <b>${username}</b> allaqachon bor.`)
+          ? (added ? `✅ <b>${username}</b> qo'shildi!` : `⚠️ <b>${username}</b> allaqachon bor.`)
           : `❌ <b>${username}</b> topilmadi.\nKanal public bo'lishi kerak.`,
         { parse_mode: 'HTML' }
       );
-      return ctx.reply(`📡 <b>Kanallar</b>\n\n` + storage.getChannels(userId).map((c, i) => `${i + 1}. ${c.username}`).join('\n') || 'Hali yo\'q',
-        { parse_mode: 'HTML', ...channelMenu() });
+      const channels = await storage.getChannels(userId);
+      return ctx.reply(
+        `📡 <b>Kanallar</b>\n\n` + (channels.map((c, i) => `${i + 1}. ${c.username}`).join('\n') || 'Hali yo\'q'),
+        { parse_mode: 'HTML', ...channelMenu() }
+      );
     }
 
     // ── Bo'lim nomi
@@ -245,7 +277,7 @@ function bot(token) {
       if (keywords.length === 0) {
         return ctx.reply('❌ Kamida bitta kalit so\'z kiriting.', sectionMenu());
       }
-      const added = storage.addSection(userId, data.name, keywords);
+      const added = await storage.addSection(userId, data.name, keywords);
       await ctx.reply(
         added
           ? `✅ <b>${data.name}</b> bo'limi yaratildi!\n\n🔑 Kalit so'zlar: ${keywords.map(k => `<code>${k}</code>`).join(' · ')}`
@@ -260,7 +292,8 @@ function bot(token) {
     if (action === 'kw_add') {
       clearState(userId);
       const keywords = text.split(',').map(k => k.trim()).filter(k => k);
-      const added = keywords.filter(kw => storage.addKeywordToSection(userId, data.name, kw));
+      const results = await Promise.all(keywords.map(kw => storage.addKeywordToSection(userId, data.name, kw)));
+      const added = keywords.filter((_, i) => results[i]);
       await ctx.reply(
         added.length > 0
           ? `✅ Qo'shildi: ${added.map(k => `<code>${k}</code>`).join(', ')}`
@@ -276,9 +309,9 @@ function bot(token) {
       clearState(userId);
       const val = parseInt(text);
       if (isNaN(val) || val < 30) {
-        return ctx.reply('❌ Noto\'g\'ri qiymat. Kamida 30 soniya bo\'lishi kerak.', settingsMenu(ctx.from.id));
+        return ctx.reply('❌ Noto\'g\'ri qiymat. Kamida 30 soniya bo\'lishi kerak.', await settingsMenu(ctx.from.id));
       }
-      storage.updateSetting(userId, 'pollInterval', val);
+      await storage.updateSetting(userId, 'pollInterval', val);
       await ctx.reply(`✅ Yangilanish oralig'i: <b>${val} soniya</b>`, { parse_mode: 'HTML' });
       if (monitor.isRunning(userId)) {
         monitor.restartInterval(ctx.telegram, userId);
@@ -292,9 +325,9 @@ function bot(token) {
       clearState(userId);
       const val = parseInt(text);
       if (isNaN(val) || val < 1 || val > 14) {
-        return ctx.reply('❌ 1 dan 14 gacha son kiriting.', settingsMenu(ctx.from.id));
+        return ctx.reply('❌ 1 dan 14 gacha son kiriting.', await settingsMenu(ctx.from.id));
       }
-      storage.updateSetting(userId, 'historyDays', val);
+      await storage.updateSetting(userId, 'historyDays', val);
       await ctx.reply(`✅ Tarix chuqurligi: <b>${val} kun</b>`, { parse_mode: 'HTML' });
       return renderSettings(ctx);
     }
@@ -304,7 +337,6 @@ function bot(token) {
   // INLINE CALLBACKLAR
   // ════════════════════════════════════════════
 
-  // Monitoring
   b.action('mon:once', async (ctx) => {
     await ctx.answerCbQuery();
     await ctx.editMessageReplyMarkup(undefined);
@@ -318,7 +350,7 @@ function bot(token) {
     if (monitor.isRunning(userId)) {
       return ctx.answerCbQuery('Allaqachon ishlayapti!', { show_alert: true });
     }
-    const settings = storage.getSettings(userId);
+    const settings = await storage.getSettings(userId);
     await ctx.editMessageReplyMarkup(undefined);
     await ctx.reply(
       `🔄 <b>Davomiy monitoring boshlandi!</b>\n\n⏱ Har <b>${settings.pollInterval}s</b>da tekshiriladi.\nTo'xtatish: ▶️ Monitoring → ⏹ To'xtatish`,
@@ -337,28 +369,24 @@ function bot(token) {
     );
   });
 
-  // Kanal o'chirish
   b.action(/^del_ch:(.+)$/, async (ctx) => {
-    storage.removeChannel(ctx.from.id, ctx.match[1]);
+    await storage.removeChannel(ctx.from.id, ctx.match[1]);
     await ctx.answerCbQuery('✅ O\'chirildi');
     await ctx.editMessageText(`✅ <b>${ctx.match[1]}</b> o'chirildi.`, { parse_mode: 'HTML' });
   });
 
-  // Bo'lim o'chirish
   b.action(/^del_sec:(.+)$/, async (ctx) => {
-    storage.removeSection(ctx.from.id, ctx.match[1]);
+    await storage.removeSection(ctx.from.id, ctx.match[1]);
     monitor.triggerPoll(ctx.telegram, ctx.from.id);
     await ctx.answerCbQuery('✅ O\'chirildi');
     await ctx.editMessageText(`✅ <b>${ctx.match[1]}</b> bo'limi o'chirildi.`, { parse_mode: 'HTML' });
   });
 
-  // Bo'lim tafsiloti
   b.action(/^sec:(.+)$/, async (ctx) => {
     await ctx.answerCbQuery();
     return renderSectionDetail(ctx, ctx.match[1]);
   });
 
-  // Bo'limga kalit so'z qo'shish
   b.action(/^kw_add:(.+)$/, async (ctx) => {
     await ctx.answerCbQuery();
     setState(ctx.from.id, 'kw_add', { name: ctx.match[1] });
@@ -368,10 +396,9 @@ function bot(token) {
     );
   });
 
-  // Bo'limdan kalit so'z o'chirish
   b.action(/^kw_del:([^|]+)\|(.+)$/, async (ctx) => {
     const [, secName, kw] = ctx.match;
-    storage.removeKeywordFromSection(ctx.from.id, secName, kw);
+    await storage.removeKeywordFromSection(ctx.from.id, secName, kw);
     monitor.triggerPoll(ctx.telegram, ctx.from.id);
     await ctx.answerCbQuery(`✅ "${kw}" o'chirildi`);
     return renderSectionDetail(ctx, secName, true);
@@ -385,8 +412,10 @@ function bot(token) {
 // ════════════════════════════════════════════
 
 async function renderSectionList(ctx) {
-  const sections = storage.getSections(ctx.from.id);
-  let text = `📂 <b>Bo'limlar</b>\n<i>${statusLine(ctx.from.id)}</i>\n\n`;
+  const sections = await storage.getSections(ctx.from.id);
+  const info = await userInfoLine(ctx.from.id);
+  const status = await statusLine(ctx.from.id);
+  let text = `${info}\n\n📂 <b>Bo'limlar</b>\n<i>${status}</i>\n\n`;
 
   if (sections.length === 0) {
     text += `Hali bo'lim yo'q.\n\n💡 Bo'lim — bu filtr guruhi. Har bir bo'limda\nkalit so'zlar bo'ladi. Habar ularning\n<i>barchasiga</i> mos kelsa sizga yuboriladi.`;
@@ -404,7 +433,7 @@ async function renderSectionList(ctx) {
 }
 
 async function renderSectionDetail(ctx, secName, edit = false) {
-  const sections = storage.getSections(ctx.from.id);
+  const sections = await storage.getSections(ctx.from.id);
   const sec = sections.find(s => s.name === secName);
   if (!sec) return ctx.reply('❌ Bo\'lim topilmadi.');
 
@@ -432,14 +461,16 @@ async function renderSectionDetail(ctx, secName, edit = false) {
 
 async function renderSettings(ctx) {
   const userId = ctx.from.id;
-  const s = storage.getSettings(userId);
+  const s = await storage.getSettings(userId);
+  const info = await userInfoLine(userId);
   const text =
+    `${info}\n\n` +
     `⚙️ <b>Sozlamalar</b>\n\n` +
     `⏱ <b>Yangilanish oralig'i:</b> ${s.pollInterval} soniya\n` +
     `📅 <b>Tarix chuqurligi:</b> ${s.historyDays} kun\n` +
     `📋 <b>Xabar formati:</b> ${s.compact ? 'Qisqa' : 'To\'liq'}\n\n` +
     `O'zgartirish uchun quyidagi tugmalardan foydalaning:`;
-  return ctx.reply(text, { parse_mode: 'HTML', ...settingsMenu(userId) });
+  return ctx.reply(text, { parse_mode: 'HTML', ...await settingsMenu(userId) });
 }
 
 // ════════════════════════════════════════════
@@ -469,8 +500,8 @@ function sectionMenu() {
   ]).resize();
 }
 
-function settingsMenu(userId) {
-  const s = storage.getSettings(userId);
+async function settingsMenu(userId) {
+  const s = await storage.getSettings(userId);
   return Markup.keyboard([
     [`⏱ Yangilanish oralig'i`],
     [`📅 Tarix chuqurligi`],

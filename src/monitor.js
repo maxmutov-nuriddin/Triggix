@@ -35,14 +35,12 @@ async function sendMsg(telegram, userId, msg, section, compact) {
 
   let text;
   if (compact) {
-    // Qisqa format
     const preview = (msg.text || '').substring(0, 300);
     text = `📢 @${clean}`;
     if (section) text += ` · ${section.name}`;
     if (preview) text += `\n${preview}${msg.text && msg.text.length > 300 ? '...' : ''}`;
     text += `\n🔗 <a href="${link}">Ko'rish</a>`;
   } else {
-    // To'liq format
     const dateStr = msg.date
       ? msg.date.toLocaleString('uz-UZ', { timeZone: 'Asia/Tashkent' })
       : '';
@@ -68,9 +66,9 @@ async function sendMsg(telegram, userId, msg, section, compact) {
 }
 
 async function fetchHistory(telegram, userId) {
-  const channels = storage.getChannels(userId);
-  const sections = storage.getSections(userId);
-  const settings = storage.getSettings(userId);
+  const channels = await storage.getChannels(userId);
+  const sections = await storage.getSections(userId);
+  const settings = await storage.getSettings(userId);
   const lastSeenId = getLastSeen(userId);
   const cutoffMs = settings.historyDays * 24 * 60 * 60 * 1000;
 
@@ -78,7 +76,6 @@ async function fetchHistory(telegram, userId) {
 
   for (const channel of channels) {
     try {
-      // historyDays ga mos ravishda scraper ga uzatamiz
       const messages = await scraper.fetchRecentMessages(channel.username, cutoffMs);
 
       if (messages.length > 0)
@@ -117,9 +114,9 @@ async function fetchHistory(telegram, userId) {
 }
 
 async function pollNewMessages(telegram, userId) {
-  const channels = storage.getChannels(userId);
-  const sections = storage.getSections(userId);
-  const settings = storage.getSettings(userId);
+  const channels = await storage.getChannels(userId);
+  const sections = await storage.getSections(userId);
+  const settings = await storage.getSettings(userId);
   const lastSeenId = getLastSeen(userId);
 
   for (const channel of channels) {
@@ -162,11 +159,12 @@ async function startContinuous(telegram, userId) {
 
   await fetchHistory(telegram, userId);
 
-  const settings = storage.getSettings(userId);
+  const settings = await storage.getSettings(userId);
   const interval = (settings.pollInterval || 60) * 1000;
 
   entry.timer = setInterval(async () => {
-    if (storage.getChannels(userId).length > 0)
+    const channels = await storage.getChannels(userId);
+    if (channels.length > 0)
       await pollNewMessages(telegram, userId).catch(console.error);
   }, interval);
 }
@@ -181,7 +179,6 @@ function stopContinuous(userId) {
   return false;
 }
 
-// Intervalini qayta sozlash (sozlamalar o'zgarganda)
 async function restartInterval(telegram, userId) {
   if (!isRunning(userId)) return;
   stopContinuous(userId);

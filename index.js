@@ -1,6 +1,7 @@
 require('dotenv').config();
 
 const http = require('http');
+const { connect } = require('./src/db');
 const { bot } = require('./src/bot');
 
 const BOT_TOKEN = process.env.BOT_TOKEN;
@@ -19,14 +20,19 @@ http.createServer((_req, res) => {
   console.log(`🌐 HTTP server: port ${PORT}`);
 });
 
-const b = bot(BOT_TOKEN);
+async function main() {
+  await connect();
 
-b.launch()
-  .then(() => console.log('✅ Bot ishga tushdi!'))
-  .catch(err => {
-    console.error('❌ Bot ishlamadi:', err.message);
-    process.exit(1);
-  });
+  const b = bot(BOT_TOKEN);
 
-process.once('SIGINT', () => b.stop('SIGINT'));
-process.once('SIGTERM', () => b.stop('SIGTERM'));
+  await b.launch();
+  console.log('✅ Bot ishga tushdi!');
+
+  process.once('SIGINT', () => b.stop('SIGINT'));
+  process.once('SIGTERM', () => b.stop('SIGTERM'));
+}
+
+main().catch(err => {
+  console.error('❌ Bot ishlamadi:', err.message);
+  process.exit(1);
+});
