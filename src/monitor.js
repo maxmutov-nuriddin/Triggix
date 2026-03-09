@@ -1,4 +1,5 @@
 const storage = require('./storage');
+const { setMonitoringActive } = require('./storage');
 const scraper = require('./scraper');
 
 // userId → { timer, lastSeenId }
@@ -157,6 +158,7 @@ async function startContinuous(telegram, userId) {
   const entry = { timer: null, lastSeenId: {} };
   userMonitors.set(userId, entry);
 
+  await setMonitoringActive(userId, true);
   await fetchHistory(telegram, userId);
 
   const settings = await storage.getSettings(userId);
@@ -174,6 +176,7 @@ function stopContinuous(userId) {
   if (m && m.timer) {
     clearInterval(m.timer);
     m.timer = null;
+    setMonitoringActive(userId, false).catch(console.error);
     return true;
   }
   return false;

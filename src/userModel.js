@@ -13,6 +13,7 @@ const userSchema = new mongoose.Schema({
     historyDays:  { type: Number, default: 2 },
     compact:      { type: Boolean, default: false },
   },
+  monitoringActive: { type: Boolean, default: false },
 });
 
 module.exports = mongoose.model('User', userSchema);

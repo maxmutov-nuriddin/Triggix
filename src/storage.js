@@ -129,6 +129,14 @@ async function updateSetting(userId, key, value) {
   await user.save();
 }
 
+async function setMonitoringActive(userId, active) {
+  await User.updateOne({ userId }, { $set: { monitoringActive: active } });
+}
+
+async function getActiveMonitoringUsers() {
+  return await User.find({ monitoringActive: true, 'channels.0': { $exists: true } }, 'userId').lean();
+}
+
 module.exports = {
   saveUserProfile,
   getUserProfile,
@@ -136,5 +144,6 @@ module.exports = {
   getSections, addSection, removeSection,
   addKeywordToSection, removeKeywordFromSection,
   getSettings, updateSetting,
+  setMonitoringActive, getActiveMonitoringUsers,
   DEFAULT_SETTINGS,
 };
