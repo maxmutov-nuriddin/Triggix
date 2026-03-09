@@ -83,8 +83,23 @@ async function fetchRecentMessages(username, cutoffMs = TWO_DAYS_MS) {
 // Kanal mavjudligini tekshirish
 async function checkChannel(username) {
   try {
-    const msgs = await fetchMessages(username);
-    return { ok: true, count: msgs.length };
+    const clean = username.replace('@', '');
+    const { data } = await axios.get(`https://t.me/s/${clean}`, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (compatible; TelegramBot/1.0)',
+        'Accept-Language': 'en-US,en;q=0.9',
+      },
+      timeout: 15000,
+    });
+    const $ = cheerio.load(data);
+    const title = $('.tgme_page_title').first().text().trim() || clean;
+    const msgs = [];
+    $('.tgme_widget_message').each((_, el) => {
+      const dataPost = $(el).attr('data-post') || '';
+      const msgId = parseInt(dataPost.split('/')[1]) || 0;
+      if (msgId > 0) msgs.push(msgId);
+    });
+    return { ok: true, count: msgs.length, title };
   } catch (err) {
     return { ok: false, error: err.message };
   }

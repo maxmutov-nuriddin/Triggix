@@ -163,6 +163,21 @@ function bot(token) {
     );
   });
 
+  b.hears('🗑 Barchasini o\'chirish', async (ctx) => {
+    const channels = await storage.getChannels(ctx.from.id);
+    if (channels.length === 0) return ctx.reply('Hali kanal qo\'shilmagan.');
+    return ctx.reply(
+      `⚠️ Haqiqatan ham <b>barcha ${channels.length} ta kanalni</b> o'chirmoqchimisiz?`,
+      {
+        parse_mode: 'HTML',
+        ...Markup.inlineKeyboard([
+          [Markup.button.callback('🗑 Ha, barchasini o\'chir', 'clear_channels')],
+          [Markup.button.callback('❌ Bekor qilish', 'cancel_clear')],
+        ]),
+      }
+    );
+  });
+
   // ════════════════════════════════════════════
   // BO'LIM MENYUSI
   // ════════════════════════════════════════════
@@ -241,10 +256,17 @@ function bot(token) {
     // ── Kanal qo'shish
     if (action === 'add_channel') {
       clearState(userId);
-      const username = '@' + text.replace('@', '');
+      // URL yoki username dan faqat kanal nomini ajratib olamiz
+      let raw = text.trim();
+      raw = raw.replace(/^https?:\/\//i, '');       // https:// olib tashlash
+      raw = raw.replace(/^(?:t\.me|telegram\.me)\//i, ''); // t.me/ olib tashlash
+      raw = raw.replace(/^@/, '');                  // @ olib tashlash
+      raw = raw.split('/')[0].split('?')[0];        // qo'shimcha path/query olib tashlash
+      const username = '@' + raw;
       const loading = await ctx.reply('⏳ Kanal tekshirilmoqda...');
       const check = await scraper.checkChannel(username).catch(() => ({ ok: false, error: 'Xato' }));
-      const added = check.ok ? await storage.addChannel(userId, { username, title: username }) : false;
+      const title = check.title || username;
+      const added = check.ok ? await storage.addChannel(userId, { username, title }) : false;
       await ctx.telegram.editMessageText(ctx.chat.id, loading.message_id, null,
         check.ok
           ? (added ? `✅ <b>${username}</b> qo'shildi!` : `⚠️ <b>${username}</b> allaqachon bor.`)
@@ -375,6 +397,17 @@ function bot(token) {
     await ctx.editMessageText(`✅ <b>${ctx.match[1]}</b> o'chirildi.`, { parse_mode: 'HTML' });
   });
 
+  b.action('clear_channels', async (ctx) => {
+    await storage.clearChannels(ctx.from.id);
+    await ctx.answerCbQuery('✅ Barchasi o\'chirildi');
+    await ctx.editMessageText('🗑 <b>Barcha kanallar o\'chirildi.</b>', { parse_mode: 'HTML' });
+  });
+
+  b.action('cancel_clear', async (ctx) => {
+    await ctx.answerCbQuery('Bekor qilindi');
+    await ctx.deleteMessage();
+  });
+
   b.action(/^del_sec:(.+)$/, async (ctx) => {
     await storage.removeSection(ctx.from.id, ctx.match[1]);
     monitor.triggerPoll(ctx.telegram, ctx.from.id);
@@ -487,7 +520,7 @@ function mainMenu() {
 function channelMenu() {
   return Markup.keyboard([
     ['➕ Kanal qo\'shish'],
-    ['❌ Kanal o\'chirish'],
+    ['❌ Kanal o\'chirish', '🗑 Barchasini o\'chirish'],
     ['🔙 Orqaga'],
   ]).resize();
 }

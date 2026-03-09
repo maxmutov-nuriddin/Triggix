@@ -63,6 +63,12 @@ async function removeChannel(userId, username) {
   return user.channels.length < before;
 }
 
+async function clearChannels(userId) {
+  const user = await getOrCreate(userId);
+  user.channels = [];
+  await user.save();
+}
+
 // ── Bo'limlar ─────────────────────────────────
 
 async function getSections(userId) {
@@ -126,7 +132,7 @@ async function updateSetting(userId, key, value) {
 module.exports = {
   saveUserProfile,
   getUserProfile,
-  getChannels, addChannel, removeChannel,
+  getChannels, addChannel, removeChannel, clearChannels,
   getSections, addSection, removeSection,
   addKeywordToSection, removeKeywordFromSection,
   getSettings, updateSetting,
