@@ -27,7 +27,23 @@ async function main() {
 
   const b = bot(BOT_TOKEN);
 
-  await b.launch();
+  // 409 Conflict bo'lsa (eski instance hali o'chmagan) — kutib qayta urinish
+  let launched = false;
+  for (let attempt = 1; attempt <= 5; attempt++) {
+    try {
+      await b.launch({ dropPendingUpdates: true });
+      launched = true;
+      break;
+    } catch (err) {
+      if (err.response && err.response.error_code === 409) {
+        console.log(`⏳ 409 Conflict, ${attempt}/5 urinish. 5 soniya kutilmoqda...`);
+        await new Promise(r => setTimeout(r, 5000));
+      } else {
+        throw err;
+      }
+    }
+  }
+  if (!launched) throw new Error('Bot 5 ta urinishdan keyin ham ishlamadi (409 Conflict)');
   console.log('✅ Bot ishga tushdi!');
 
   // Avval yoqilgan monitoringlarni avtomatik tiklash
